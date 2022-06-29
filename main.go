@@ -52,6 +52,13 @@ func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.
 
 func main() {
 
+	// TODO: Replace these with config file later
+	var daysAgo int16 = 48
+	var parentPageID string = "2950594561"
+	var apiResultsLimit int = 10000
+	var apiType string = "page"
+	var spaceKey string = "CI"
+
 	// goconfluence.SetDebug(true)
 	_ = kong.Parse(&args)
 
@@ -63,10 +70,10 @@ func main() {
 
 	// Get content by query
 	res, err := api.GetContent(goconfluence.ContentQuery{
-		SpaceKey: "CI",
+		SpaceKey: spaceKey,
 		Expand:   []string{"history.lastUpdated", "ancestors"},
-		Type:     "page",
-		Limit:    10000,
+		Type:     apiType,
+		Limit:    apiResultsLimit,
 		// Ordering by lastUpdated.when is not supported by the API so we have to get EVERYTHING and then sort within Go :(
 		// OrderBy: "history.lastUpdated.when desc",
 	})
@@ -74,8 +81,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var oneYear time.Duration = 48 * time.Hour
-	allPages := filterResults("2950594561", oneYear, res)
+	var oneYear time.Duration = time.Duration(daysAgo) * time.Hour
+	allPages := filterResults(parentPageID, oneYear, res)
 	sort.SliceStable(allPages, func(i, j int) bool {
 		return allPages[i].History.LastUpdated.When > allPages[j].History.LastUpdated.When
 	})

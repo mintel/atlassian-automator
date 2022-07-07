@@ -1,6 +1,6 @@
-FROM golang:1.18.1-alpine3.15 as builder
+FROM golang:1.18.3 as dev
 
-RUN apk add --no-cache git jq
+RUN apt-get install -y exiftool git jq
 
 ENV GO111MODULE=on
 WORKDIR /app
@@ -13,6 +13,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build . && \
     mv atlassian-automator /usr/local/bin/
 
 FROM debian:stable-20220622
-COPY --from=builder /usr/local/bin/atlassian-automator /usr/local/bin/atlassian-automator
+COPY --from=dev /usr/local/bin/atlassian-automator /usr/local/bin/atlassian-automator
 
 ENTRYPOINT ["atlassian-automator"]

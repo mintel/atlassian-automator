@@ -5,14 +5,29 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/andygrunwald/go-jira"
 	"github.com/mintel/atlassian-automator/pkg/lastupdate"
 	goconfluence "github.com/virtomize/confluence-go-api"
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	baseURL         *url.URL
+	confluenceAPI   *goconfluence.API
+	debugMode       bool
+	goconfluenceURL url.URL
+	gojiraURL       url.URL
+	jiraClient      *jira.Client
+	osSignals       chan os.Signal
+	wg              sync.WaitGroup
 )
 
 var args struct {
@@ -27,18 +42,19 @@ var args struct {
 }
 
 type Config struct {
-	BaseURLs struct {
-		Confluence string `yaml:"confluence"`
-		Jira       string `yaml:"jira"`
-	} `yaml:"baseURLs"`
-	Debug  bool `yaml:"debug"`
-	Issues []struct {
-		Interval       string            `yaml:"interval"`
-		JiraLabels     []string          `yaml:"jiraLabels"`
-		JiraProjectKey string            `yaml:"jiraProjectKey"`
-		LastUpdate     lastupdate.Config `yaml:"lastUpdate"`
-		Name           string            `yaml:"name"`
-	}
+	Atlassian struct {
+		BaseURL string `yaml:"baseURL"`
+	} `yaml:"atlassian"`
+	Debug        bool          `yaml:"debug"`
+	IssueConfigs []IssueConfig `yaml:"issues"`
+}
+
+type IssueConfig struct {
+	Interval       string            `yaml:"interval"`
+	JiraLabels     []string          `yaml:"jiraLabels"`
+	JiraProjectKey string            `yaml:"jiraProjectKey"`
+	LastUpdate     lastupdate.Config `yaml:"lastUpdate"`
+	Name           string            `yaml:"name"`
 }
 
 func NewConfig(configPath string) (*Config, error) {
@@ -90,6 +106,62 @@ func hasExistingJiraIssue(itemTitle string, projectKey string, jiraClient *jira.
 	return true
 }
 
+func issueRaiser(cfg *IssueConfig) {
+	defer wg.Done()
+	intervalDuration, err := time.ParseDuration(cfg.Interval)
+	if err != nil {
+		log.Fatal(err)
+	}
+	timer := time.NewTimer(intervalDuration)
+	log.Printf("%s: waiting for %s", cfg.Name, cfg.Interval)
+	for {
+		select {
+		case signal := <-osSignals:
+			log.Printf("%s signal received. Shutting down.", signal.String())
+			return
+		case <-timer.C:
+			log.Printf("%s: running job", cfg.Name)
+			if cfg.LastUpdate != (lastupdate.Config{}) {
+				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &goconfluenceURL)
+				if err != nil {
+					log.Fatal(err)
+				}
+				for _, page := range allPages {
+					if debugMode {
+						fmt.Print(page.Summary + "\n\n")
+						fmt.Print(page.Description)
+					} else {
+						if !hasExistingJiraIssue(page.Summary, cfg.JiraProjectKey, jiraClient) {
+							issue := jira.Issue{
+								Fields: &jira.IssueFields{
+									Type:        jira.IssueType{Name: "Task"},
+									Project:     jira.Project{Key: cfg.JiraProjectKey},
+									Description: page.Description,
+									Summary:     page.Summary,
+									Labels:      cfg.JiraLabels,
+								},
+							}
+							createdIssue, resp, err := jiraClient.Issue.Create(&issue)
+							if err != nil {
+								log.Printf("Unable to create Jira issue for %s \n %s \n", cfg.Name, err)
+								log.Print(resp)
+								continue
+							}
+							fmt.Printf("%s: %+v\n", createdIssue.Key, createdIssue.Self)
+							log.Printf("Created Jira Issue '%s' in project: %s' \n", createdIssue.Key, cfg.JiraProjectKey)
+						}
+					}
+				}
+			}
+			log.Printf("%s: job complete.", cfg.Name)
+			log.Printf("%s: waiting for %s", cfg.Name, cfg.Interval)
+			timer = time.NewTimer(intervalDuration)
+		default:
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
 func main() {
 
 	_ = kong.Parse(&args)
@@ -97,67 +169,50 @@ func main() {
 	if err := ValidateConfigPath(args.Config); err != nil {
 		log.Fatal(err)
 	}
+
 	cfg, err := NewConfig(args.Config)
 	if err != nil {
 		log.Fatal(err)
 	}
-	goconfluence.SetDebug(cfg.Debug)
+
+	debugMode = cfg.Debug
+	// goconfluence.SetDebug(debugMode)
+
+	// Create URLs for API libraries
+	baseURL, err = url.Parse(cfg.Atlassian.BaseURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	goconfluenceURL = *baseURL
+	goconfluenceURL.Path = path.Join(goconfluenceURL.Path, "/wiki/rest/api")
+	gojiraURL = *baseURL
 
 	// Set up Jira client
 	tp := jira.BasicAuthTransport{
 		Username: args.AtlassianUsername,
 		Password: args.AtlassianToken,
 	}
-	jiraClient, err := jira.NewClient(tp.Client(), cfg.BaseURLs.Jira)
+	jiraClient, err = jira.NewClient(tp.Client(), gojiraURL.String())
 	if err != nil {
-		log.Printf("Unable to authenticate with Jira: %s", err)
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Set up Confluence client
-	confluenceBaseURL, err := url.Parse(cfg.BaseURLs.Confluence)
-	if err != nil {
-		log.Fatal(err)
-	}
-	confluenceAPIURL := *confluenceBaseURL
-	confluenceAPIURL.Path = path.Join(confluenceBaseURL.Path, "/rest/api")
-	confluenceAPI, err := goconfluence.NewAPI(confluenceAPIURL.String(), args.AtlassianUsername, args.AtlassianToken)
+	confluenceAPI, err = goconfluence.NewAPI(goconfluenceURL.String(), args.AtlassianUsername, args.AtlassianToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if cfg.Issues != nil {
-		for _, i := range cfg.Issues {
-			if i.LastUpdate != (lastupdate.Config{}) {
-				allPages, err := lastupdate.Run(*confluenceAPI, i.LastUpdate, confluenceBaseURL)
-				if err != nil {
-					log.Fatal(err)
-				}
-				for _, page := range allPages {
-					if !hasExistingJiraIssue(page.Summary, i.JiraProjectKey, jiraClient) {
-						issue := jira.Issue{
-							Fields: &jira.IssueFields{
-								Type:        jira.IssueType{Name: "Task"},
-								Project:     jira.Project{Key: i.JiraProjectKey},
-								Description: page.Description,
-								Summary:     page.Summary,
-								Labels:      i.JiraLabels,
-							},
-						}
-						createdIssue, resp, err := jiraClient.Issue.Create(&issue)
-						if err != nil {
-							log.Printf("Unable to create Jira issue for %s \n %s \n", i.Name, err)
-							log.Print(resp)
-							continue
-						}
-						fmt.Printf("%s: %+v\n", createdIssue.Key, createdIssue.Self)
-						log.Printf("Created Jira Issue '%s' in project: %s' \n", createdIssue.Key, i.JiraProjectKey)
-					}
-					fmt.Print(page.Summary + "\n\n")
-					fmt.Print(page.Description)
-				}
-			}
+	osSignals = make(chan os.Signal, 1)
+	signal.Notify(osSignals, syscall.SIGINT, syscall.SIGTERM)
+
+	if cfg.IssueConfigs != nil {
+		wg.Add(len(cfg.IssueConfigs))
+		for _, ic := range cfg.IssueConfigs {
+			go issueRaiser(&ic)
 		}
 	}
+
+	wg.Wait()
 
 }

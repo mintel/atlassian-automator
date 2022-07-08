@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/andygrunwald/go-jira"
+	"github.com/mintel/atlassian-automator/pkg/common"
 	"github.com/mintel/atlassian-automator/pkg/lastupdate"
 	goconfluence "github.com/virtomize/confluence-go-api"
 	"gopkg.in/yaml.v3"
@@ -26,7 +29,6 @@ var (
 	goconfluenceURL url.URL
 	gojiraURL       url.URL
 	jiraClient      *jira.Client
-	osSignals       chan os.Signal
 	wg              sync.WaitGroup
 )
 
@@ -82,42 +84,56 @@ func ValidateConfigPath(path string) error {
 	return nil
 }
 
-func hasExistingJiraIssue(itemTitle string, projectKey string, jiraClient *jira.Client) bool {
+func hasExistingJiraIssue(itemTitle string, projectKey string, jiraClient *jira.Client) (bool, error) {
 	// Escape quotes in the title so its parsed correctly by Jira's JQL parser
 	itemTitle = strings.ReplaceAll(itemTitle, `"`, `\"`)
 	// Wrap the itemTitle in "\ \" so Jira does a direct match.
 	//https://confluence.atlassian.com/jirasoftwareserver/search-syntax-for-text-fields-939938747.html
 	jql := fmt.Sprintf("project = \"%s\" AND summary ~ \"\\\"%s\\\"\"", projectKey, itemTitle)
-	log.Printf("Searching for existing issue \"%s\" in project %s\n", itemTitle, projectKey)
+	log.Printf("searching for existing issue \"%s\" in project %s\n", itemTitle, projectKey)
 	issues, _, err := jiraClient.Issue.Search(jql, nil)
 	if err != nil {
-		log.Printf("Issue search failed for JQL: %s", jql)
-		panic(err)
+		return false, err
 	}
 
 	if len(issues) == 0 {
-		return false
+		return false, nil
 	} else if len(issues) > 1 {
-		log.Printf("Found multiple issues that match \"%s\":", itemTitle)
+		log.Printf("found multiple issues that match \"%s\":", itemTitle)
 		for _, x := range issues {
 			log.Printf("%s ", x.Key)
 		}
 	}
-	return true
+	return true, nil
 }
 
-func issueRaiser(cfg *IssueConfig) {
+func raiseIssue(page *common.CollectedData, jiraProjectKey string, jiraLabels []string) (*jira.Issue, *jira.Response, error) {
+	issue := jira.Issue{
+		Fields: &jira.IssueFields{
+			Type:        jira.IssueType{Name: "Task"},
+			Project:     jira.Project{Key: jiraProjectKey},
+			Description: page.Description,
+			Summary:     page.Summary,
+			Labels:      jiraLabels,
+		},
+	}
+	jiraIssue, jiraResponse, err := jiraClient.Issue.Create(&issue)
+	if err != nil {
+		return jiraIssue, jiraResponse, err
+	}
+	return jiraIssue, jiraResponse, nil
+}
+
+func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 	defer wg.Done()
 	intervalDuration, err := time.ParseDuration(cfg.Interval)
 	if err != nil {
 		log.Fatal(err)
 	}
-	timer := time.NewTimer(intervalDuration)
-	log.Printf("%s: waiting for %s", cfg.Name, cfg.Interval)
+	timer := time.NewTimer(time.Second)
 	for {
 		select {
-		case signal := <-osSignals:
-			log.Printf("%s signal received. Shutting down.", signal.String())
+		case <-ctx.Done():
 			return
 		case <-timer.C:
 			log.Printf("%s: running job", cfg.Name)
@@ -131,24 +147,20 @@ func issueRaiser(cfg *IssueConfig) {
 						fmt.Print(page.Summary + "\n\n")
 						fmt.Print(page.Description)
 					} else {
-						if !hasExistingJiraIssue(page.Summary, cfg.JiraProjectKey, jiraClient) {
-							issue := jira.Issue{
-								Fields: &jira.IssueFields{
-									Type:        jira.IssueType{Name: "Task"},
-									Project:     jira.Project{Key: cfg.JiraProjectKey},
-									Description: page.Description,
-									Summary:     page.Summary,
-									Labels:      cfg.JiraLabels,
-								},
-							}
-							createdIssue, resp, err := jiraClient.Issue.Create(&issue)
+						exists, err := hasExistingJiraIssue(page.Summary, cfg.JiraProjectKey, jiraClient)
+						if err != nil {
+							log.Fatal(err)
+						}
+						if !exists {
+							log.Printf("%s: creating issue for %s", cfg.Name, page.Summary)
+							jiraIssue, _, err := raiseIssue(&page, cfg.JiraProjectKey, cfg.JiraLabels)
 							if err != nil {
-								log.Printf("Unable to create Jira issue for %s \n %s \n", cfg.Name, err)
-								log.Print(resp)
-								continue
+								log.Fatal(err)
+							} else {
+								log.Printf("%s: issue created for %s: %s", cfg.Name, page.Summary, jiraIssue.Key)
 							}
-							fmt.Printf("%s: %+v\n", createdIssue.Key, createdIssue.Self)
-							log.Printf("Created Jira Issue '%s' in project: %s' \n", createdIssue.Key, cfg.JiraProjectKey)
+						} else {
+							log.Printf("%s: issue already exists for %s", cfg.Name, page.Summary)
 						}
 					}
 				}
@@ -156,27 +168,26 @@ func issueRaiser(cfg *IssueConfig) {
 			log.Printf("%s: job complete.", cfg.Name)
 			log.Printf("%s: waiting for %s", cfg.Name, cfg.Interval)
 			timer = time.NewTimer(intervalDuration)
-		default:
-			time.Sleep(1 * time.Second)
 		}
 	}
 }
 
 func main() {
 
+	// Parse command line arguments
 	_ = kong.Parse(&args)
 
+	// Parse config file
 	if err := ValidateConfigPath(args.Config); err != nil {
 		log.Fatal(err)
 	}
-
 	cfg, err := NewConfig(args.Config)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Set global debugMode variable
 	debugMode = cfg.Debug
-	// goconfluence.SetDebug(debugMode)
 
 	// Create URLs for API libraries
 	baseURL, err = url.Parse(cfg.Atlassian.BaseURL)
@@ -203,16 +214,40 @@ func main() {
 		log.Fatal(err)
 	}
 
-	osSignals = make(chan os.Signal, 1)
-	signal.Notify(osSignals, syscall.SIGINT, syscall.SIGTERM)
+	// Set up OS signal notifications
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
+	// Start job goroutines
 	if cfg.IssueConfigs != nil {
 		wg.Add(len(cfg.IssueConfigs))
 		for _, ic := range cfg.IssueConfigs {
-			go issueRaiser(&ic)
+			go issueRaiser(ctx, &ic)
 		}
 	}
 
+	// Start HTTP server goroutine for healthchecks
+	httpServer := http.Server{
+		Addr: ":8000",
+	}
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+	})
+	go httpServer.ListenAndServe()
+
+	// Sit and wait for an OS SIGTERM / SIGINT then shut everything down when received
+	<-ctx.Done()
+	log.Print("shutting down gracefully")
+	stop()
 	wg.Wait()
+
+	// Give 5s more to process existing requests
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := httpServer.Shutdown(timeoutCtx); err != nil {
+		log.Fatal(err)
+	}
 
 }

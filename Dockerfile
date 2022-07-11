@@ -17,7 +17,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build . && \
     mv atlassian-automator /usr/local/bin/
 
 FROM debian:stable-20220622-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY --from=dev /usr/local/bin/atlassian-automator /app/atlassian-automator
 
-ENTRYPOINT ["atlassian-automator"]
+ENTRYPOINT ["/app/atlassian-automator"]

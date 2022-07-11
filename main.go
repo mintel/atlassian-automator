@@ -57,6 +57,7 @@ type IssueConfig struct {
 	JiraProjectKey string            `yaml:"jiraProjectKey"`
 	LastUpdate     lastupdate.Config `yaml:"lastUpdate"`
 	Name           string            `yaml:"name"`
+	RetryInterval  string            `yaml:"retryInterval"`
 }
 
 func NewConfig(configPath string) (*Config, error) {
@@ -119,7 +120,7 @@ func raiseIssue(page *common.CollectedData, jiraProjectKey string, jiraLabels []
 	}
 	jiraIssue, jiraResponse, err := jiraClient.Issue.Create(&issue)
 	if err != nil {
-		return jiraIssue, jiraResponse, err
+		return nil, nil, err
 	}
 	return jiraIssue, jiraResponse, nil
 }
@@ -127,6 +128,10 @@ func raiseIssue(page *common.CollectedData, jiraProjectKey string, jiraLabels []
 func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 	defer wg.Done()
 	intervalDuration, err := time.ParseDuration(cfg.Interval)
+	if err != nil {
+		log.Fatal(err)
+	}
+	retryIntervalDuration, err := time.ParseDuration(cfg.RetryInterval)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -140,7 +145,10 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 			if cfg.LastUpdate != (lastupdate.Config{}) {
 				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &goconfluenceURL)
 				if err != nil {
-					log.Fatal(err)
+					log.Print(err)
+					log.Printf("Retrying in %s", cfg.RetryInterval)
+					timer = time.NewTimer(retryIntervalDuration)
+					break
 				}
 				for _, page := range allPages {
 					if debugMode {
@@ -149,13 +157,15 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 					} else {
 						exists, err := hasExistingJiraIssue(page.Summary, cfg.JiraProjectKey, jiraClient)
 						if err != nil {
-							log.Fatal(err)
+							log.Print(err)
+							break
 						}
 						if !exists {
 							log.Printf("%s: creating issue for %s", cfg.Name, page.Summary)
 							jiraIssue, _, err := raiseIssue(&page, cfg.JiraProjectKey, cfg.JiraLabels)
 							if err != nil {
-								log.Fatal(err)
+								log.Print(err)
+								break
 							} else {
 								log.Printf("%s: issue created for %s: %s", cfg.Name, page.Summary, jiraIssue.Key)
 							}

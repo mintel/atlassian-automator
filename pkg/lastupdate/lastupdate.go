@@ -20,7 +20,7 @@ type Config struct {
 	ResultsLimit int    `yaml:"resultsLimit"`
 }
 
-func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.ContentSearch) []goconfluence.Content {
+func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.ContentSearch) ([]goconfluence.Content, error) {
 
 	var filtered []goconfluence.Content
 
@@ -40,7 +40,7 @@ func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.
 			layout := "2006-01-02T15:04:05.000Z"
 			lastUpdatedTime, err := time.Parse(layout, result.History.LastUpdated.When)
 			if err != nil {
-				log.Fatal(err)
+				return nil, err
 			}
 			oldestAllowedTime := time.Now().Add(-olderThan)
 			if !lastUpdatedTime.Before(oldestAllowedTime) {
@@ -52,10 +52,12 @@ func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.
 			filtered = append(filtered, result)
 		}
 	}
-	return filtered
+	return filtered, nil
 }
 
 func Run(api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.CollectedData, error) {
+
+	var collectedData []common.CollectedData
 
 	// Get content by query
 	res, err := api.GetContent(goconfluence.ContentQuery{
@@ -67,21 +69,26 @@ func Run(api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.Collected
 		// OrderBy: "history.lastUpdated.when desc",
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return nil, err
 	}
 
 	duration, err := time.ParseDuration(cfg.Duration)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return nil, err
 	}
 
-	allPages := filterResults(cfg.ParentPageID, duration, res)
+	allPages, err := filterResults(cfg.ParentPageID, duration, res)
+	if err != nil {
+		log.Print(err)
+		return nil, err
+	}
 	log.Printf("%+v pages found older than %s", len(allPages), cfg.Duration)
 	sort.SliceStable(allPages, func(i, j int) bool {
 		return allPages[i].History.LastUpdated.When > allPages[j].History.LastUpdated.When
 	})
 
-	var collectedData []common.CollectedData
 	for _, page := range allPages {
 		pageURL := *baseURL
 		pageURL.Path = path.Join(pageURL.Path, page.Links.TinyUI)
@@ -92,5 +99,5 @@ func Run(api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.Collected
 			},
 		)
 	}
-	return collectedData, err
+	return collectedData, nil
 }

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,24 +22,20 @@ import (
 )
 
 var (
-	baseURL         *url.URL
-	confluenceAPI   *goconfluence.API
-	debugMode       bool
-	goconfluenceURL url.URL
-	gojiraURL       url.URL
-	jiraClient      *jira.Client
-	wg              sync.WaitGroup
+	baseURL           *url.URL
+	confluenceAPI     *goconfluence.API
+	confluenceAPIURL  url.URL
+	confluenceBaseURL url.URL
+	debugMode         bool
+	jiraClient        *jira.Client
+	wg                sync.WaitGroup
 )
 
 var args struct {
-	AtlassianToken       string `env:"ATLASSIAN_TOKEN" required:"" help:"Your Atlassian API token. Either the environment variable or the flag MUST be set."`
-	AtlassianUsername    string `env:"ATLASSIAN_USERNAME" required:"" help:"Your Atlassian user name. Either the environment variable or the flag MUST be set."`
-	Config               string `env:"CONFIG_FILE" default:"config.yaml" type:"path" help:"Path to atlasstian-automator config file."`
-	ListenAddress        string `default:":8080"`
-	RedisAuthToken       string `env:"REDIS_AUTH_TOKEN"`
-	RedisPort            string `env:"REDIS_PORT"`
-	RedisPrimaryEndpoint string `env:"REDIS_PRIMARY_ENDPOINT"`
-	RedisSSL             bool   `env:"REDIS_SSL" default:"true"`
+	AtlassianToken    string `env:"ATLASSIAN_TOKEN" required:"" help:"Your Atlassian API token. Either the environment variable or the flag MUST be set."`
+	AtlassianUsername string `env:"ATLASSIAN_USERNAME" required:"" help:"Your Atlassian user name. Either the environment variable or the flag MUST be set."`
+	Config            string `env:"CONFIG_FILE" default:"config.yaml" type:"path" help:"Path to atlassian-automator config file."`
+	ListenAddress     string `default:":8000"`
 }
 
 type Config struct {
@@ -57,6 +52,7 @@ type IssueConfig struct {
 	JiraProjectKey string            `yaml:"jiraProjectKey"`
 	LastUpdate     lastupdate.Config `yaml:"lastUpdate"`
 	Name           string            `yaml:"name"`
+	RetryInterval  string            `yaml:"retryInterval"`
 }
 
 func NewConfig(configPath string) (*Config, error) {
@@ -119,7 +115,7 @@ func raiseIssue(page *common.CollectedData, jiraProjectKey string, jiraLabels []
 	}
 	jiraIssue, jiraResponse, err := jiraClient.Issue.Create(&issue)
 	if err != nil {
-		return jiraIssue, jiraResponse, err
+		return nil, nil, err
 	}
 	return jiraIssue, jiraResponse, nil
 }
@@ -127,6 +123,10 @@ func raiseIssue(page *common.CollectedData, jiraProjectKey string, jiraLabels []
 func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 	defer wg.Done()
 	intervalDuration, err := time.ParseDuration(cfg.Interval)
+	if err != nil {
+		log.Fatal(err)
+	}
+	retryIntervalDuration, err := time.ParseDuration(cfg.RetryInterval)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -138,9 +138,12 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 		case <-timer.C:
 			log.Printf("%s: running job", cfg.Name)
 			if cfg.LastUpdate != (lastupdate.Config{}) {
-				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &goconfluenceURL)
+				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &confluenceBaseURL)
 				if err != nil {
-					log.Fatal(err)
+					log.Print(err)
+					log.Printf("Retrying in %s", cfg.RetryInterval)
+					timer = time.NewTimer(retryIntervalDuration)
+					break
 				}
 				for _, page := range allPages {
 					if debugMode {
@@ -149,13 +152,15 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 					} else {
 						exists, err := hasExistingJiraIssue(page.Summary, cfg.JiraProjectKey, jiraClient)
 						if err != nil {
-							log.Fatal(err)
+							log.Print(err)
+							break
 						}
 						if !exists {
 							log.Printf("%s: creating issue for %s", cfg.Name, page.Summary)
 							jiraIssue, _, err := raiseIssue(&page, cfg.JiraProjectKey, cfg.JiraLabels)
 							if err != nil {
-								log.Fatal(err)
+								log.Print(err)
+								break
 							} else {
 								log.Printf("%s: issue created for %s: %s", cfg.Name, page.Summary, jiraIssue.Key)
 							}
@@ -194,22 +199,29 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	goconfluenceURL = *baseURL
-	goconfluenceURL.Path = path.Join(goconfluenceURL.Path, "/wiki/rest/api")
-	gojiraURL = *baseURL
+	confluenceBaseRef, err := url.Parse("/wiki")
+	if err != nil {
+		log.Fatal(err)
+	}
+	confluenceAPIRef, err := url.Parse("/wiki/rest/api")
+	if err != nil {
+		log.Fatal(err)
+	}
+	confluenceBaseURL = *baseURL.ResolveReference(confluenceBaseRef)
+	confluenceAPIURL = *baseURL.ResolveReference(confluenceAPIRef)
 
 	// Set up Jira client
 	tp := jira.BasicAuthTransport{
 		Username: args.AtlassianUsername,
 		Password: args.AtlassianToken,
 	}
-	jiraClient, err = jira.NewClient(tp.Client(), gojiraURL.String())
+	jiraClient, err = jira.NewClient(tp.Client(), baseURL.String())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Set up Confluence client
-	confluenceAPI, err = goconfluence.NewAPI(goconfluenceURL.String(), args.AtlassianUsername, args.AtlassianToken)
+	confluenceAPI, err = goconfluence.NewAPI(confluenceAPIURL.String(), args.AtlassianUsername, args.AtlassianToken)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -228,13 +240,17 @@ func main() {
 
 	// Start HTTP server goroutine for healthchecks
 	httpServer := http.Server{
-		Addr: ":8000",
+		Addr: args.ListenAddress,
 	}
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 	})
-	go httpServer.ListenAndServe()
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
 
 	// Sit and wait for an OS SIGTERM / SIGINT then shut everything down when received
 	<-ctx.Done()

@@ -246,7 +246,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 	})
-	go httpServer.ListenAndServe()
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
 
 	// Sit and wait for an OS SIGTERM / SIGINT then shut everything down when received
 	<-ctx.Done()

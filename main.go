@@ -32,14 +32,10 @@ var (
 )
 
 var args struct {
-	AtlassianToken       string `env:"ATLASSIAN_TOKEN" required:"" help:"Your Atlassian API token. Either the environment variable or the flag MUST be set."`
-	AtlassianUsername    string `env:"ATLASSIAN_USERNAME" required:"" help:"Your Atlassian user name. Either the environment variable or the flag MUST be set."`
-	Config               string `env:"CONFIG_FILE" default:"config.yaml" type:"path" help:"Path to atlasstian-automator config file."`
-	ListenAddress        string `default:":8080"`
-	RedisAuthToken       string `env:"REDIS_AUTH_TOKEN"`
-	RedisPort            string `env:"REDIS_PORT"`
-	RedisPrimaryEndpoint string `env:"REDIS_PRIMARY_ENDPOINT"`
-	RedisSSL             bool   `env:"REDIS_SSL" default:"true"`
+	AtlassianToken    string `env:"ATLASSIAN_TOKEN" required:"" help:"Your Atlassian API token. Either the environment variable or the flag MUST be set."`
+	AtlassianUsername string `env:"ATLASSIAN_USERNAME" required:"" help:"Your Atlassian user name. Either the environment variable or the flag MUST be set."`
+	Config            string `env:"CONFIG_FILE" default:"config.yaml" type:"path" help:"Path to atlassian-automator config file."`
+	ListenAddress     string `default:":8000"`
 }
 
 type Config struct {
@@ -244,7 +240,7 @@ func main() {
 
 	// Start HTTP server goroutine for healthchecks
 	httpServer := http.Server{
-		Addr: ":8000",
+		Addr: args.ListenAddress,
 	}
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

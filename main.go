@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
 	"sync"
 	"syscall"
@@ -23,13 +22,13 @@ import (
 )
 
 var (
-	baseURL         *url.URL
-	confluenceAPI   *goconfluence.API
-	debugMode       bool
-	goconfluenceURL url.URL
-	gojiraURL       url.URL
-	jiraClient      *jira.Client
-	wg              sync.WaitGroup
+	baseURL           *url.URL
+	confluenceAPI     *goconfluence.API
+	confluenceAPIURL  url.URL
+	confluenceBaseURL url.URL
+	debugMode         bool
+	jiraClient        *jira.Client
+	wg                sync.WaitGroup
 )
 
 var args struct {
@@ -143,7 +142,7 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 		case <-timer.C:
 			log.Printf("%s: running job", cfg.Name)
 			if cfg.LastUpdate != (lastupdate.Config{}) {
-				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &goconfluenceURL)
+				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &confluenceBaseURL)
 				if err != nil {
 					log.Print(err)
 					log.Printf("Retrying in %s", cfg.RetryInterval)
@@ -204,22 +203,29 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	goconfluenceURL = *baseURL
-	goconfluenceURL.Path = path.Join(goconfluenceURL.Path, "/wiki/rest/api")
-	gojiraURL = *baseURL
+	confluenceBaseRef, err := url.Parse("/wiki")
+	if err != nil {
+		log.Fatal(err)
+	}
+	confluenceAPIRef, err := url.Parse("/wiki/rest/api")
+	if err != nil {
+		log.Fatal(err)
+	}
+	confluenceBaseURL = *baseURL.ResolveReference(confluenceBaseRef)
+	confluenceAPIURL = *baseURL.ResolveReference(confluenceAPIRef)
 
 	// Set up Jira client
 	tp := jira.BasicAuthTransport{
 		Username: args.AtlassianUsername,
 		Password: args.AtlassianToken,
 	}
-	jiraClient, err = jira.NewClient(tp.Client(), gojiraURL.String())
+	jiraClient, err = jira.NewClient(tp.Client(), baseURL.String())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Set up Confluence client
-	confluenceAPI, err = goconfluence.NewAPI(goconfluenceURL.String(), args.AtlassianUsername, args.AtlassianToken)
+	confluenceAPI, err = goconfluence.NewAPI(confluenceAPIURL.String(), args.AtlassianUsername, args.AtlassianToken)
 	if err != nil {
 		log.Fatal(err)
 	}

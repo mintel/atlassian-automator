@@ -13,8 +13,7 @@ COPY go.sum .
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build . && \
-    mv atlassian-automator /usr/local/bin/
+RUN CGO_ENABLED=0 GOOS=linux go build .
 
 FROM debian:stable-20220622-slim
 
@@ -23,6 +22,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=dev /usr/local/bin/atlassian-automator /app/atlassian-automator
+COPY --from=dev /app/atlassian-automator /app/atlassian-automator
 
 ENTRYPOINT ["/app/atlassian-automator"]

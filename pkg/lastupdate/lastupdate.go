@@ -12,6 +12,10 @@ import (
 	goconfluence "github.com/virtomize/confluence-go-api"
 )
 
+const (
+	pkg string = "lastupdate"
+)
+
 type Config struct {
 	Duration     string `yaml:"duration"`
 	ParentPageID string `yaml:"parentPageID"`
@@ -40,6 +44,7 @@ func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.
 			layout := "2006-01-02T15:04:05.000Z"
 			lastUpdatedTime, err := time.Parse(layout, result.History.LastUpdated.When)
 			if err != nil {
+				common.PromErrors.WithLabelValues(pkg).Inc()
 				return nil, err
 			}
 			oldestAllowedTime := time.Now().Add(-olderThan)
@@ -69,18 +74,21 @@ func Run(api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.Collected
 		// OrderBy: "history.lastUpdated.when desc",
 	})
 	if err != nil {
+		common.PromErrors.WithLabelValues(pkg).Inc()
 		log.Print(err)
 		return nil, err
 	}
 
 	duration, err := time.ParseDuration(cfg.Duration)
 	if err != nil {
+		common.PromErrors.WithLabelValues(pkg).Inc()
 		log.Print(err)
 		return nil, err
 	}
 
 	allPages, err := filterResults(cfg.ParentPageID, duration, res)
 	if err != nil {
+		common.PromErrors.WithLabelValues(pkg).Inc()
 		log.Print(err)
 		return nil, err
 	}

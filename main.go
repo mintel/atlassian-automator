@@ -17,8 +17,13 @@ import (
 	"github.com/andygrunwald/go-jira"
 	"github.com/mintel/atlassian-automator/pkg/common"
 	"github.com/mintel/atlassian-automator/pkg/lastupdate"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	goconfluence "github.com/virtomize/confluence-go-api"
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	pkg string = "main"
 )
 
 var (
@@ -140,6 +145,7 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 			if cfg.LastUpdate != (lastupdate.Config{}) {
 				allPages, err := lastupdate.Run(*confluenceAPI, cfg.LastUpdate, &confluenceBaseURL)
 				if err != nil {
+					common.PromErrors.WithLabelValues(pkg).Inc()
 					log.Print(err)
 					log.Printf("Retrying in %s", cfg.RetryInterval)
 					timer = time.NewTimer(retryIntervalDuration)
@@ -152,6 +158,7 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 					} else {
 						exists, err := hasExistingJiraIssue(page.Summary, cfg.JiraProjectKey, jiraClient)
 						if err != nil {
+							common.PromErrors.WithLabelValues(pkg).Inc()
 							log.Print(err)
 							break
 						}
@@ -159,6 +166,7 @@ func issueRaiser(ctx context.Context, cfg *IssueConfig) {
 							log.Printf("%s: creating issue for %s", cfg.Name, page.Summary)
 							jiraIssue, _, err := raiseIssue(&page, cfg.JiraProjectKey, cfg.JiraLabels)
 							if err != nil {
+								common.PromErrors.WithLabelValues(pkg).Inc()
 								log.Print(err)
 								break
 							} else {
@@ -246,6 +254,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 	})
+	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)

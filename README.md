@@ -13,7 +13,8 @@ Flags:
       --atlassian-username=STRING    Your Atlassian user name. Either the environment variable or the flag MUST be set
                                      ($ATLASSIAN_USERNAME).
       --config="config.yaml"         Path to atlassian-automator config file ($CONFIG_FILE).
-      --listen-address=":8000"
+      --listen-address=":8000"       Address on which HTTP server will listen (for healthchecks and metrics)
+                                     ($LISTEN_ADDRESS).
 ```
 
 ## Configuration

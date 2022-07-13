@@ -40,7 +40,7 @@ var args struct {
 	AtlassianToken    string `env:"ATLASSIAN_TOKEN" required:"" help:"Your Atlassian API token. Either the environment variable or the flag MUST be set."`
 	AtlassianUsername string `env:"ATLASSIAN_USERNAME" required:"" help:"Your Atlassian user name. Either the environment variable or the flag MUST be set."`
 	Config            string `env:"CONFIG_FILE" default:"config.yaml" type:"path" help:"Path to atlassian-automator config file."`
-	ListenAddress     string `default:":8000"`
+	ListenAddress     string `env:"LISTEN_ADDRESS" default:":8000" help:"Address on which HTTP server will listen (for healthchecks and metrics)."`
 }
 
 type Config struct {

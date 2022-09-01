@@ -60,7 +60,7 @@ func filterResults(ancestorID string, olderThan time.Duration, cs *goconfluence.
 	return filtered, nil
 }
 
-func Run(api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.CollectedData, error) {
+func Run(jobName string, api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.CollectedData, error) {
 
 	var collectedData []common.CollectedData
 
@@ -75,24 +75,24 @@ func Run(api goconfluence.API, cfg Config, baseURL *url.URL) ([]common.Collected
 	})
 	if err != nil {
 		common.PromErrors.WithLabelValues(pkg).Inc()
-		log.Print(err)
+		log.Printf("%s: error getting content from confluence: %s", jobName, err)
 		return nil, err
 	}
 
 	duration, err := time.ParseDuration(cfg.Duration)
 	if err != nil {
 		common.PromErrors.WithLabelValues(pkg).Inc()
-		log.Print(err)
+		log.Printf("%s: couldn't parse duration %s: %s", jobName, cfg.Duration, err)
 		return nil, err
 	}
 
 	allPages, err := filterResults(cfg.ParentPageID, duration, res)
 	if err != nil {
 		common.PromErrors.WithLabelValues(pkg).Inc()
-		log.Print(err)
+		log.Printf("%s: couldn't filter results: %s", jobName, err)
 		return nil, err
 	}
-	log.Printf("%+v pages found older than %s", len(allPages), cfg.Duration)
+	log.Printf("%s: %+v pages found older than %s", jobName, len(allPages), cfg.Duration)
 	sort.SliceStable(allPages, func(i, j int) bool {
 		return allPages[i].History.LastUpdated.When > allPages[j].History.LastUpdated.When
 	})

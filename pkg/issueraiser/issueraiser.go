@@ -76,7 +76,7 @@ func lastUpdateRaiser(cfg *Config) {
 	}
 
 	for {
-		allPages, err = lastupdate.Run(cfg.Name, *common.ConfluenceClient, cfg.LastUpdate, common.ConfluenceBaseURL)
+		allPages, err = lastupdate.Run(cfg.Name, *common.ConfluenceAPI, cfg.LastUpdate, common.ConfluenceBaseURL)
 		if err != nil {
 			common.PromErrors.WithLabelValues(pkg).Inc()
 			log.Print(err)

@@ -35,7 +35,3 @@ To develop and test this you'll need the following:
 * The following environment variables set:
   * `ATLASSIAN_USERNAME` (your email address)
   * `ATLASSIAN_TOKEN` (the Atlassian token you created above)
-
-go install github.com/rjeczalik/interfaces/cmd/interfacer@latest
-go install github.com/golang/mock/mockgen@v1.6.0
-go generate ./...

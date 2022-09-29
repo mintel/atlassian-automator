@@ -5,6 +5,8 @@ import (
 	"net/url"
 
 	"github.com/andygrunwald/go-jira"
+	"github.com/mintel/atlassian-automator/pkg/confluenceclient"
+	"github.com/mintel/atlassian-automator/pkg/jiraclient"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	goconfluence "github.com/virtomize/confluence-go-api"
@@ -16,7 +18,7 @@ type CollectedData struct {
 }
 
 var (
-	ConfluenceAPI     *goconfluence.API
+	ConfluenceClient  *goconfluence.API
 	ConfluenceBaseURL *url.URL
 	JiraClient        *jira.Client
 	PromErrors        = promauto.NewCounterVec(
@@ -34,26 +36,9 @@ func AtlassianSetup(baseURL *url.URL, username string, password string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	confluenceAPIRef, err := url.Parse("/wiki/rest/api")
-	if err != nil {
-		log.Fatal(err)
-	}
 	ConfluenceBaseURL = baseURL.ResolveReference(confluenceBaseRef)
-	confluenceAPIURL := *baseURL.ResolveReference(confluenceAPIRef)
-
-	// Set up Jira client
-	tp := jira.BasicAuthTransport{
-		Username: username,
-		Password: password,
-	}
-	JiraClient, err = jira.NewClient(tp.Client(), baseURL.String())
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// Set up Jira Client
+	JiraClient = jiraclient.ClientFor(baseURL, username, password)
 	// Set up Confluence client
-	ConfluenceAPI, err = goconfluence.NewAPI(confluenceAPIURL.String(), username, password)
-	if err != nil {
-		log.Fatal(err)
-	}
+	ConfluenceClient = confluenceclient.ClientFor(baseURL, username, password)
 }

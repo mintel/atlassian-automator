@@ -3,21 +3,33 @@
 package confluenceclient
 
 import (
-	"log"
+	"context"
 	"net/url"
 
 	goconfluence "github.com/virtomize/confluence-go-api"
 )
 
-func ClientFor(baseURL *url.URL, username string, password string) *goconfluence.API {
+type contextKey string
+
+var (
+	clientContextKey contextKey = "confluenceclient.client"
+)
+
+func ClientFor(ctx context.Context, baseURL *url.URL, username string, password string) (Client, error) {
+
+	client, ok := ctx.Value(clientContextKey).(Client)
+	if ok && client != nil {
+		return client, nil
+	}
+
 	confluenceAPIRef, err := url.Parse("/wiki/rest/api")
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	confluenceAPIURL := *baseURL.ResolveReference(confluenceAPIRef)
-	ConfluenceClient, err := goconfluence.NewAPI(confluenceAPIURL.String(), username, password)
+	client, err = goconfluence.NewAPI(confluenceAPIURL.String(), username, password)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	return ConfluenceClient
+	return client, nil
 }

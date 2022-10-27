@@ -76,16 +76,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Set up OS signal notifications
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Setup Atlassian clients
 	baseURL, err = url.Parse(cfg.Atlassian.BaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	common.AtlassianSetup(baseURL, args.AtlassianUsername, args.AtlassianToken)
-
-	// Set up OS signal notifications
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	common.AtlassianSetup(ctx, baseURL, args.AtlassianUsername, args.AtlassianToken)
 
 	// Start job goroutines
 	var wg sync.WaitGroup

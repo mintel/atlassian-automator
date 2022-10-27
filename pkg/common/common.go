@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"log"
 	"net/url"
 
@@ -31,14 +32,32 @@ var (
 		})
 )
 
-func AtlassianSetup(baseURL *url.URL, username string, password string) {
+func AtlassianSetup(ctx context.Context, baseURL *url.URL, username string, password string) {
+
+	var ok bool
+
+	// Set up Jira Client
+	jiraClient, err := jiraclient.ClientFor(ctx, baseURL, username, password)
+	if err != nil {
+		log.Fatal(err)
+	}
+	JiraClient, ok = jiraClient.(*jira.Client)
+	if !ok {
+		log.Fatal(ok)
+	}
+
+	// Set up Confluence client
 	confluenceBaseRef, err := url.Parse("/wiki")
 	if err != nil {
 		log.Fatal(err)
 	}
 	ConfluenceBaseURL = baseURL.ResolveReference(confluenceBaseRef)
-	// Set up Jira Client
-	JiraClient = jiraclient.ClientFor(baseURL, username, password)
-	// Set up Confluence client
-	ConfluenceClient = confluenceclient.ClientFor(baseURL, username, password)
+	confluenceClient, err := confluenceclient.ClientFor(ctx, baseURL, username, password)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ConfluenceClient, ok = confluenceClient.(*goconfluence.API)
+	if !ok {
+		log.Fatal(ok)
+	}
 }

@@ -3,20 +3,34 @@
 package jiraclient
 
 import (
-	"log"
+	"context"
 	"net/url"
 
 	"github.com/andygrunwald/go-jira"
 )
 
-func ClientFor(baseURL *url.URL, username string, password string) *jira.Client {
+type contextKey string
+
+var (
+	clientContextKey contextKey = "jiraclient.client"
+)
+
+func ClientFor(ctx context.Context, baseURL *url.URL, username string, password string) (Client, error) {
+
+	client, ok := ctx.Value(clientContextKey).(Client)
+	if ok && client != nil {
+		return client, nil
+	}
+
 	tp := jira.BasicAuthTransport{
 		Username: username,
 		Password: password,
 	}
-	JiraClient, err := jira.NewClient(tp.Client(), baseURL.String())
+
+	client, err := jira.NewClient(tp.Client(), baseURL.String())
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	return JiraClient
+
+	return client, nil
 }

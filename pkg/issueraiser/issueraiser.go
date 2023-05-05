@@ -28,7 +28,7 @@ type Config struct {
 
 func hasExistingJiraIssue(itemTitle string, projectKey string, jiraClient *jira.Client) (bool, error) {
 	// Escape quotes in the title so its parsed correctly by Jira's JQL parser
-	itemTitle = strings.ReplaceAll(itemTitle, `"`, `\"`)
+	itemTitle = strings.ReplaceAll(itemTitle, `"`, `\\\"`)
 	// Wrap the itemTitle in "\ \" so Jira does a direct match.
 	//https://confluence.atlassian.com/jirasoftwareserver/search-syntax-for-text-fields-939938747.html
 	jql := fmt.Sprintf("project = \"%s\" AND summary ~ \"\\\"%s\\\"\"", projectKey, itemTitle)
@@ -66,7 +66,7 @@ func raiseIssue(page *common.CollectedData, jiraProjectKey string, jiraLabels []
 	return jiraIssue, jiraResponse, nil
 }
 
-func lastUpdateRaiser(cfg *Config) {
+func lastUpdateRaiser(ctx context.Context, cfg *Config) {
 
 	var allPages []common.CollectedData
 
@@ -76,7 +76,7 @@ func lastUpdateRaiser(cfg *Config) {
 	}
 
 	for {
-		allPages, err = lastupdate.Run(cfg.Name, *common.ConfluenceAPI, cfg.LastUpdate, common.ConfluenceBaseURL)
+		allPages, err = lastupdate.Run(ctx, cfg.Name, cfg.LastUpdate)
 		if err != nil {
 			common.PromErrors.WithLabelValues(pkg).Inc()
 			log.Print(err)
@@ -96,17 +96,17 @@ func lastUpdateRaiser(cfg *Config) {
 			break
 		}
 		if !exists {
-			log.Printf("%s: creating issue for %s", cfg.Name, page.Summary)
+			log.Printf("%s: creating issue for \"%s\"", cfg.Name, page.Summary)
 			jiraIssue, _, err := raiseIssue(&page, cfg.JiraProjectKey, cfg.JiraLabels)
 			if err != nil {
 				common.PromErrors.WithLabelValues(pkg).Inc()
 				log.Print(err)
 				break
 			} else {
-				log.Printf("%s: issue created for %s: %s", cfg.Name, page.Summary, jiraIssue.Key)
+				log.Printf("%s: issue created for \"%s\": %s", cfg.Name, page.Summary, jiraIssue.Key)
 			}
 		} else {
-			log.Printf("%s: issue already exists for %s", cfg.Name, page.Summary)
+			log.Printf("%s: issue already exists for \"%s\"", cfg.Name, page.Summary)
 		}
 	}
 }
@@ -126,7 +126,7 @@ func Run(ctx context.Context, wg *sync.WaitGroup, cfg *Config) {
 			log.Printf("%s: running job", cfg.Name)
 			// Check for lastupdate config (not empty)
 			if cfg.LastUpdate != (lastupdate.Config{}) {
-				lastUpdateRaiser(cfg)
+				lastUpdateRaiser(ctx, cfg)
 			}
 			log.Printf("%s: job complete.", cfg.Name)
 			log.Printf("%s: waiting for %s", cfg.Name, cfg.Interval)

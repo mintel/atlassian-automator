@@ -5,9 +5,9 @@ import (
 	"net/url"
 
 	"github.com/andygrunwald/go-jira"
+	"github.com/mintel/atlassian-automator/pkg/confluence"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	goconfluence "github.com/virtomize/confluence-go-api"
 )
 
 type CollectedData struct {
@@ -16,10 +16,11 @@ type CollectedData struct {
 }
 
 var (
-	ConfluenceAPI     *goconfluence.API
-	ConfluenceBaseURL *url.URL
-	JiraClient        *jira.Client
-	PromErrors        = promauto.NewCounterVec(
+	// ConfluenceAPI     *goconfluence.API
+	// ConfluenceBaseURL *url.URL
+	ConfluenceClient *confluence.Client
+	JiraClient       *jira.Client
+	PromErrors       = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "atlassian_automator_errors_total",
 			Help: "The number of errors encountered by the main package",
@@ -30,30 +31,40 @@ var (
 )
 
 func AtlassianSetup(baseURL *url.URL, username string, password string) {
-	confluenceBaseRef, err := url.Parse("/wiki")
-	if err != nil {
-		log.Fatal(err)
-	}
-	confluenceAPIRef, err := url.Parse("/wiki/rest/api")
-	if err != nil {
-		log.Fatal(err)
-	}
-	ConfluenceBaseURL = baseURL.ResolveReference(confluenceBaseRef)
-	confluenceAPIURL := *baseURL.ResolveReference(confluenceAPIRef)
+	// confluenceBaseRef, err := url.Parse("/wiki")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// confluenceAPIRef, err := url.Parse("/wiki/rest/api")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// ConfluenceBaseURL = baseURL.ResolveReference(confluenceBaseRef)
+	// confluenceAPIURL := *baseURL.ResolveReference(confluenceAPIRef)
+
+	var err error
 
 	// Set up Jira client
-	tp := jira.BasicAuthTransport{
+	ctp := confluence.BasicAuthTransport{
+		Username: username,
+		APIToken: password,
+	}
+	ConfluenceClient, err = confluence.NewClient(baseURL.String(), ctp.Client())
+	if err != nil {
+		log.Fatal(err)
+	}
+	jtp := jira.BasicAuthTransport{
 		Username: username,
 		Password: password,
 	}
-	JiraClient, err = jira.NewClient(tp.Client(), baseURL.String())
+	JiraClient, err = jira.NewClient(jtp.Client(), baseURL.String())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Set up Confluence client
-	ConfluenceAPI, err = goconfluence.NewAPI(confluenceAPIURL.String(), username, password)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// ConfluenceAPI, err = goconfluence.NewAPI(confluenceAPIURL.String(), username, password)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 }

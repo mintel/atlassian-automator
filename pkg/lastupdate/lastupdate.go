@@ -156,6 +156,9 @@ func getSpaceIDFromKey(ctx context.Context, key string) (string, error) {
 	return spaces.Results[0].ID, nil
 }
 
+// Run gets metadata for all the pages in a Confluence space and then filters out the pages that 1) are not descendents
+// of the provided parent page and 2) have been updated within the specified time period. Doing it this way (rather than
+// using the Children API endpoint) dramatically reduces the number of API calls and the total time taken.
 func Run(ctx context.Context, jobName string, cfg Config) ([]common.CollectedData, error) {
 	var collectedData []common.CollectedData
 

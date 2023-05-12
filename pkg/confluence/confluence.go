@@ -33,8 +33,9 @@ type Client struct {
 	common service
 
 	// Services used for talking to different parts of the Jira API.
-	Page  *PageService
-	Space *SpaceService
+	Children *ChildrenService
+	Page     *PageService
+	Space    *SpaceService
 }
 
 // service is the base structure to bundle API services
@@ -76,6 +77,7 @@ func NewClient(baseURL string, httpClient *http.Client) (*Client, error) {
 	}
 	c.common.client = c
 
+	c.Children = (*ChildrenService)(&c.common)
 	c.Page = (*PageService)(&c.common)
 	c.Space = (*SpaceService)(&c.common)
 

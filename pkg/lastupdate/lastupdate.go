@@ -6,11 +6,23 @@ import (
 
 	"github.com/mintel/atlassian-automator/pkg/common"
 	"github.com/mintel/atlassian-automator/pkg/confluence"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // const (
 // 	pkg string = "lastupdate"
 // )
+
+var (
+	PromLastUpdatePagesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "atlassian_automator_lastupdate_pages_total",
+			Help: "The number of pages monitored by lastupdate jobs",
+		},
+		[]string{"name"},
+	)
+)
 
 type Config struct {
 	Duration     string `yaml:"duration"`
@@ -20,11 +32,13 @@ type Config struct {
 	ResultsLimit int    `yaml:"resultsLimit"`
 }
 
-func findChildren(allPages confluence.Pages, parentID string) confluence.Pages {
+// findChildren takes a confluence.Pages object and iterates through it to find child pages of the provided
+// parentPageID, then calls itself to find children of those children and so on.
+func findChildren(allPages confluence.Pages, parentPageID string) confluence.Pages {
 	var children confluence.Pages
 
 	for _, page := range allPages.Results {
-		if page.ParentID == parentID {
+		if page.ParentID == parentPageID {
 			children.Results = append(children.Results, page)
 		}
 	}
@@ -123,6 +137,7 @@ func findChildren(allPages confluence.Pages, parentID string) confluence.Pages {
 // 	return collectedData, nil
 // }
 
+// getSpaceIDFromKey gets the ID of a space using the provided key
 func getSpaceIDFromKey(ctx context.Context, key string) (string, error) {
 
 	spaces, _, err := common.ConfluenceClient.Space.GetSpaces(ctx, &confluence.GetSpacesOptions{
@@ -144,6 +159,7 @@ func getSpaceIDFromKey(ctx context.Context, key string) (string, error) {
 func Run(ctx context.Context, jobName string, cfg Config) ([]common.CollectedData, error) {
 	var collectedData []common.CollectedData
 
+	// Get the space's ID using the key provided in the config
 	spaceID, err := getSpaceIDFromKey(ctx, cfg.SpaceKey)
 	if err != nil {
 		return nil, err
@@ -157,9 +173,13 @@ func Run(ctx context.Context, jobName string, cfg Config) ([]common.CollectedDat
 	if err != nil {
 		return nil, err
 	}
+
+	// Filter the list so it only includes children of the parent page ID provided in the config
 	filtered := findChildren(*pages, cfg.ParentPageID)
+	PromLastUpdatePagesTotal.WithLabelValues(jobName).Set(float64(len(filtered.Results)))
 	fmt.Print(filtered)
 
+	// Find pages not updated since the provided duration
 	// duration, err := time.ParseDuration(cfg.Duration)
 	// if err != nil {
 	// 	common.PromErrors.WithLabelValues(pkg).Inc()

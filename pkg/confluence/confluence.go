@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	ClientVersion    = "2.0.0"
-	defaultUserAgent = "mintel-go-confluence" + "/" + ClientVersion
+	ClientVersion    = "0.2.0"
+	defaultUserAgent = "atlassian-automator" + "/" + ClientVersion
 )
 
 type Client struct {
@@ -22,17 +22,17 @@ type Client struct {
 	client   *http.Client // HTTP client used to communicate with the API.
 
 	// Base URL for API requests.
-	// Should be set to a domain endpoint of the Jira instance.
+	// Should be set to a domain endpoint of the Confluence instance.
 	// BaseURL should always be specified with a trailing slash.
 	BaseURL *url.URL
 
-	// User agent used when communicating with the Jira API.
+	// User agent used when communicating with the Confluence API.
 	UserAgent string
 
 	// Reuse a single struct instead of allocating one for each service on the heap.
 	common service
 
-	// Services used for talking to different parts of the Jira API.
+	// Services used for talking to different parts of the Confluence API.
 	Children *ChildrenService
 	Page     *PageService
 	Space    *SpaceService
@@ -44,7 +44,7 @@ type service struct {
 	client *Client
 }
 
-// Client returns the http.Client used by this Jira client.
+// Client returns the http.Client used by this Confluence client.
 func (c *Client) Client() *http.Client {
 	c.clientMu.Lock()
 	defer c.clientMu.Unlock()
@@ -52,10 +52,10 @@ func (c *Client) Client() *http.Client {
 	return &clientCopy
 }
 
-// NewClient returns a new Confluence API client with provided base URL (often is your Jira hostname)
-// If a nil httpClient is provided, a new http.Client will be used.
-// To use API methods which require authentication, provide an http.Client that will perform the authentication for you (such as that provided by the golang.org/x/oauth2 library).
-// baseURL is the HTTP endpoint of your Jira instance and should always be specified with a trailing slash.
+// NewClient returns a new Confluence API client with provided base URL (often is your Confluence hostname) If a nil
+// httpClient is provided, a new http.Client will be used. To use API methods which require authentication, provide an
+// http.Client that will perform the authentication for you (such as that provided by the golang.org/x/oauth2 library).
+// baseURL is the HTTP endpoint of your Confluence instance and should always be specified with a trailing slash.
 func NewClient(baseURL string, httpClient *http.Client) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -170,7 +170,7 @@ func (c *Client) Do(req *http.Request, v interface{}) (*Response, error) {
 // CheckResponse checks the API response for errors, and returns them if present.
 // A response is considered an error if it has a status code outside the 200 range.
 // The caller is responsible to analyze the response body.
-// The body can contain JSON (if the error is intended) or xml (sometimes Jira just failes).
+// The body can contain JSON (if the error is intended) or xml (sometimes Confluence just fails).
 func CheckResponse(r *http.Response) error {
 	if c := r.StatusCode; 200 <= c && c <= 299 {
 		return nil
@@ -180,7 +180,7 @@ func CheckResponse(r *http.Response) error {
 	return err
 }
 
-// Response represents Jira API response. It wraps http.Response returned from
+// Response represents Confluence API response. It wraps http.Response returned from
 // API and provides information about paging.
 type Response struct {
 	*http.Response
@@ -195,18 +195,3 @@ func newResponse(r *http.Response, v interface{}) *Response {
 	// resp.populatePageValues(v)
 	return resp
 }
-
-// Sets paging values if response json was parsed to searchResult type
-// (can be extended with other types if they also need paging info)
-// func (r *Response) populatePageValues(v interface{}) {
-// 	switch value := v.(type) {
-// 	case *searchResult:
-// 		r.StartAt = value.StartAt
-// 		r.MaxResults = value.MaxResults
-// 		r.Total = value.Total
-// 	case *groupMembersResult:
-// 		r.StartAt = value.StartAt
-// 		r.MaxResults = value.MaxResults
-// 		r.Total = value.Total
-// 	}
-// }

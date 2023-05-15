@@ -26,12 +26,14 @@ Flags:
 
 ## Development
 
-To develop and test this you'll need the following:
+To develop and test this you'll need the following environment variables set:
 
-* A Jira Cloud development account (sign up [here](https://www.atlassian.com/try/cloud/signup?product=confluence.ondemand,jira-software.ondemand,jira-servicedesk.ondemand,jira-core.ondemand&developer=true)) with:
-  * A Jira Project called `Atlassian Automator` (`AA`)
-  * A Confluence Space called `Atlassian Automator` (`AA`)
-* An Atlassian API token (see [here](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/))
-* The following environment variables set:
   * `ATLASSIAN_USERNAME` (your email address)
-  * `ATLASSIAN_TOKEN` (the Atlassian token you created above)
+  * `ATLASSIAN_TOKEN` (the Atlassian token you created above):
+
+If you don't have an existing org you can use, you can get one [here](https://www.atlassian.com/try/cloud/signup?product=confluence.ondemand,jira-software.ondemand,jira-servicedesk.ondemand,jira-core.ondemand&developer=true)) with:
+
+
+## Thanks
+
+[go-jira](https://github.com/andygrunwald/go-jira/tree/main) was an important reference for the `confluence` v2 API package and we have copied a lot of its code either as-is or used it as inspiration.

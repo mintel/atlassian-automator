@@ -5,8 +5,8 @@ go 1.18
 require (
 	github.com/alecthomas/kong v0.6.1
 	github.com/andygrunwald/go-jira v1.15.1
+	github.com/google/go-querystring v1.1.0
 	github.com/prometheus/client_golang v1.12.2
-	github.com/virtomize/confluence-go-api v1.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -16,8 +16,6 @@ require (
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.3.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/magefile/mage v1.10.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect

@@ -5,7 +5,7 @@ import "net/http"
 // BasicAuthTransport is an http.RoundTripper that authenticates all requests
 // using HTTP Basic Authentication with the provided username and a Personal API Token.
 //
-// Jira docs: https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/
+// Docs: https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/
 // Create a token: https://id.atlassian.com/manage-profile/security/api-tokens
 type BasicAuthTransport struct {
 	Username string

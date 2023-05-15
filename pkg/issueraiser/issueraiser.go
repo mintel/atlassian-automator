@@ -78,8 +78,6 @@ func lastUpdateRaiser(ctx context.Context, cfg *Config) {
 	for {
 		allPages, err = lastupdate.Run(ctx, cfg.Name, cfg.LastUpdate)
 		if err != nil {
-			common.PromErrors.WithLabelValues(pkg).Inc()
-			log.Print(err)
 			log.Printf("retrying in %s", cfg.RetryInterval)
 			timer := time.NewTimer(retryIntervalDuration)
 			<-timer.C

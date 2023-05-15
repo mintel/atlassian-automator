@@ -101,6 +101,8 @@ func Run(ctx context.Context, jobName string, cfg Config) ([]common.CollectedDat
 	// Get the space's ID using the key provided in the config
 	spaceID, err := getSpaceIDFromKey(ctx, cfg.SpaceKey)
 	if err != nil {
+		common.PromErrors.WithLabelValues(pkg).Inc()
+		log.Printf("%s: couldn't get space ID from key %s: %s", jobName, cfg.SpaceKey, err)
 		return nil, err
 	}
 
@@ -110,6 +112,8 @@ func Run(ctx context.Context, jobName string, cfg Config) ([]common.CollectedDat
 		SerializeIDsAsStrings: true,
 	})
 	if err != nil {
+		common.PromErrors.WithLabelValues(pkg).Inc()
+		log.Printf("%s: couldn't get pages in space %s: %s", jobName, cfg.SpaceKey, err)
 		return nil, err
 	}
 

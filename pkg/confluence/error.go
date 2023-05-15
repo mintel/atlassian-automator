@@ -1,7 +1,6 @@
 package confluence
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,9 +8,15 @@ import (
 )
 
 type Error struct {
-	HTTPError     error
-	ErrorMessages []string          `json:"errorMessages"`
-	Errors        map[string]string `json:"errors"`
+	HTTPError error
+	Errors    []*ConfluenceError `json:"errors"`
+}
+
+type ConfluenceError struct {
+	Status int    `json:"status"`
+	Code   string `json:"code"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
 }
 
 func NewConfluenceError(resp *Response, httpError error) error {
@@ -43,42 +48,11 @@ func NewConfluenceError(resp *Response, httpError error) error {
 
 // Error is a short string representing the error
 func (e *Error) Error() string {
-	if len(e.ErrorMessages) > 0 {
-		// return fmt.Sprintf("%v", e.HTTPError)
-		return fmt.Sprintf("%s: %v", e.ErrorMessages[0], e.HTTPError)
-	}
+	var output string
 	if len(e.Errors) > 0 {
-		for key, value := range e.Errors {
-			return fmt.Sprintf("%s - %s: %v", key, value, e.HTTPError)
+		for _, err := range e.Errors {
+			output += fmt.Sprintf("%v - %s - %s - %s ", err.Status, err.Code, err.Title, err.Detail)
 		}
 	}
-	return e.HTTPError.Error()
-}
-
-// LongError is a full representation of the error as a string
-func (e *Error) LongError() string {
-	var msg bytes.Buffer
-	if e.HTTPError != nil {
-		msg.WriteString("Original:\n")
-		msg.WriteString(e.HTTPError.Error())
-		msg.WriteString("\n")
-	}
-	if len(e.ErrorMessages) > 0 {
-		msg.WriteString("Messages:\n")
-		for _, v := range e.ErrorMessages {
-			msg.WriteString(" - ")
-			msg.WriteString(v)
-			msg.WriteString("\n")
-		}
-	}
-	if len(e.Errors) > 0 {
-		for key, value := range e.Errors {
-			msg.WriteString(" - ")
-			msg.WriteString(key)
-			msg.WriteString(" - ")
-			msg.WriteString(value)
-			msg.WriteString("\n")
-		}
-	}
-	return msg.String()
+	return output
 }
